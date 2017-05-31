@@ -9,6 +9,14 @@ defmodule Veggy.Aggregate.Timer do
             "description" => Map.get(params, "description", ""),
             "_id" => Veggy.UUID.new}}
   end
+  def route(%{"command" => "SquashPomodoro"} = params) do
+    {:ok, %{"command" => "SquashPomodoro",
+            "aggregate_id" => "timer",
+            "aggregate_module" => __MODULE__,
+            "reason" => Map.get(params, "reason", ""),
+            "_id" => Veggy.UUID.new}}
+  end
+
 
   def init(id) do
     Veggy.EventStore.subscribe(self(), &match?(%{"event" => "PomodoroCompleted", "aggregate_id" => ^id}, &1))
@@ -44,7 +52,23 @@ defmodule Veggy.Aggregate.Timer do
             "description" => c["description"],
             "_id" => Veggy.UUID.new}}
   end
+  def handle(%{"command" => "SquashPomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
+  def handle(%{"command" => "SquashPomodoro"} = c, %{"pomodoro_id" => pomodoro_id} = s) do
+    :ok = Veggy.Countdown.squash(pomodoro_id)
+    {:ok, %{"event" => "PomodoroSquashed",
+            "pomodoro_id" => pomodoro_id,
+            "user_id" => s["user_id"],
+            "command_id" => c["_id"],
+            "aggregate_id" => s["id"],
+            "timer_id" => s["id"],
+            "reason" => c["reason"],
+            "_id" => Veggy.UUID.new}}
+  end
 
-  def process(%{"event" => "PomodoroStarted"}, s), do: %{s | "ticking" => true}
-  def process(%{"event" => "PomodoroCompleted"}, s), do: %{s | "ticking" => false}
+  def process(%{"event" => "PomodoroStarted", "pomodoro_id" => pomodoro_id}, s),
+    do: %{s | "ticking" => true} |> Map.put("pomodoro_id", pomodoro_id)
+  def process(%{"event" => "PomodoroSquashed"}, s),
+    do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
+  def process(%{"event" => "PomodoroCompleted"}, s),
+    do: %{s | "ticking" => false} |> Map.delete("pomodoro_id")
 end
