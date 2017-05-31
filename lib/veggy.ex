@@ -10,6 +10,7 @@ defmodule Veggy do
     children = [
       Veggy.MongoDB.child_spec,
       worker(Veggy.EventStore, []),
+      worker(Veggy.Countdown, []),
       aggregates(),
       projections(),
       Plug.Adapters.Cowboy.child_spec(:http, Veggy.HTTP, [],
@@ -24,7 +25,8 @@ defmodule Veggy do
 
   defp aggregates do
     if Application.get_env(:veggy, :enable_aggregates, true),
-      do: worker(Veggy.Aggregates, [[Veggy.Aggregate.Ping]]),
+      do: worker(Veggy.Aggregates, [[Veggy.Aggregate.Ping,
+                                     Veggy.Aggregate.Timer]]),
       else: nil
   end
 
