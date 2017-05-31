@@ -1,5 +1,5 @@
 defmodule Veggy.AcceptanceTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   use Plug.Test
 
   import Plug.Conn
@@ -10,10 +10,35 @@ defmodule Veggy.AcceptanceTest do
 
   test "command Ping" do
     subscribe_to_event %{"event" => "Pong"}
-    send_command %{"command" => "Ping"}
 
+    send_command %{"command" => "Ping"}
     assert_receive {:event, %{"event" => "Pong"}}
   end
+
+  test "command StartPomodoro" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroCompleted"}
+
+    send_command %{"command" => "StartPomodoro", "duration" => 10}
+    assert_receive {:event, %{"event" => "PomodoroStarted"}}
+    assert_receive {:event, %{"event" => "PomodoroCompleted"}}
+  end
+
+  test "command StartPomodoro fails when another pomodoro is ticking" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroCompleted"}
+    subscribe_to_event %{"event" => "CommandFailed"}
+
+    send_command %{"command" => "StartPomodoro", "duration" => 50}
+    {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
+
+    command_id = send_command %{"command" => "StartPomodoro", "duration" => 10}
+    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
+    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
+
+    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^pomodoro_id}}
+  end
+
 
 
   defp subscribe_to_event(event) when is_binary(event), do: subscribe_to_event(%{"event" => event})
