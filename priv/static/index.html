@@ -1,0 +1,32 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+    <title>Websocket client</title>
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/main.js"></script>
+  </head>
+
+  <body>
+    <div id="header">
+      <h1>Websocket Example</h1>
+      <div id="status"></div>
+    </div>
+
+    <div id="navigation">
+      <p id="connecting">
+	<input type="text" id="server" value=""></input>
+	<button type="button" onclick="toggle_connection()">connection</button>
+      </p>
+      <div id="connected">
+	<p>
+	  <input type="text" id="send_txt" value=></input>
+	  <button type="button" onclick="sendTxt();">send</button>
+	</p>
+      </div>
+      <div id="content">
+	<button id="clear" onclick="clearScreen()" >Clear text</button>
+	<div id="output"></div>
+      </div>
+    </div>
+  </body>
+</html>
