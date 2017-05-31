@@ -29,7 +29,7 @@ defmodule Veggy.AcceptanceTest do
     subscribe_to_event %{"event" => "PomodoroCompleted"}
     subscribe_to_event %{"event" => "CommandFailed"}
 
-    send_command %{"command" => "StartPomodoro", "duration" => 50}
+    send_command %{"command" => "StartPomodoro", "duration" => 100}
     {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
 
     command_id = send_command %{"command" => "StartPomodoro", "duration" => 10}
@@ -37,6 +37,27 @@ defmodule Veggy.AcceptanceTest do
     assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
 
     assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^pomodoro_id}}
+  end
+
+  test "command SquashPomodoro" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroSquashed"}
+
+    send_command %{"command" => "StartPomodoro", "duration" => 100}
+    {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
+
+    send_command %{"command" => "SquashPomodoro"}
+    assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^pomodoro_id}}
+  end
+
+  test "command SquashPomodoro fails when pomodoro is not ticking" do
+    subscribe_to_event %{"event" => "PomodoroSquashed"}
+    subscribe_to_event %{"event" => "CommandFailed"}
+
+    command_id = send_command %{"command" => "SquashPomodoro"}
+    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
+    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
+    refute_receive {:event, %{"event" => "PomodoroSquashed"}}
   end
 
 
