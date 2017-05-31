@@ -32,6 +32,8 @@ defmodule Veggy.MongoDB.Projection do
               nil -> {:error, "Event `#{inspect(event)}` is missing field `#{field_name}`"}
               field_value -> {:ok, field_value}
             end
+          f when is_function(f) ->
+            f.(event)
           unexpected ->
             {:error, "Expected a binary as value to `identity` option given `#{inspect(unexpected)}`"}
         end
