@@ -15,11 +15,22 @@ defmodule Veggy.AcceptanceTest do
     assert_receive {:event, %{"event" => "Pong"}}
   end
 
+  test "command Login" do
+    subscribe_to_event %{"event" => "LoggedIn"}
+    subscribe_to_event %{"event" => "TimerCreated"}
+
+    username = "gabriele"
+    send_command %{"command" => "Login", "username" => username}
+    assert_receive {:event, %{"event" => "LoggedIn", "username" => ^username}}
+    assert_receive {:event, %{"event" => "TimerCreated", "user_id" => ^username}}
+  end
+
   test "command StartPomodoro" do
     subscribe_to_event %{"event" => "PomodoroStarted"}
     subscribe_to_event %{"event" => "PomodoroCompleted"}
 
-    send_command %{"command" => "StartPomodoro", "duration" => 10}
+    timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 10}
     assert_receive {:event, %{"event" => "PomodoroStarted"}}
     assert_receive {:event, %{"event" => "PomodoroCompleted"}}
   end
@@ -29,24 +40,42 @@ defmodule Veggy.AcceptanceTest do
     subscribe_to_event %{"event" => "PomodoroCompleted"}
     subscribe_to_event %{"event" => "CommandFailed"}
 
-    send_command %{"command" => "StartPomodoro", "duration" => 100}
+    timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 100}
     {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
 
-    command_id = send_command %{"command" => "StartPomodoro", "duration" => 10}
+    command_id = send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 10}
     command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
     assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
 
     assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^pomodoro_id}}
   end
 
+  test "command StartPomodoro on two different timers" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroCompleted"}
+
+    first_timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartPomodoro", "timer_id" => first_timer_id, "duration" => 10}
+
+    second_timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartPomodoro", "timer_id" => second_timer_id, "duration" => 10}
+
+    assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^first_timer_id}}
+    assert_receive {:event, %{"event" => "PomodoroCompleted", "timer_id" => ^first_timer_id}}
+    assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^second_timer_id}}
+    assert_receive {:event, %{"event" => "PomodoroCompleted", "timer_id" => ^second_timer_id}}
+  end
+
   test "command SquashPomodoro" do
     subscribe_to_event %{"event" => "PomodoroStarted"}
     subscribe_to_event %{"event" => "PomodoroSquashed"}
 
-    send_command %{"command" => "StartPomodoro", "duration" => 100}
+    timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 100}
     {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
 
-    send_command %{"command" => "SquashPomodoro"}
+    send_command %{"command" => "SquashPomodoro", "timer_id" => timer_id}
     assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^pomodoro_id}}
   end
 
@@ -54,7 +83,8 @@ defmodule Veggy.AcceptanceTest do
     subscribe_to_event %{"event" => "PomodoroSquashed"}
     subscribe_to_event %{"event" => "CommandFailed"}
 
-    command_id = send_command %{"command" => "SquashPomodoro"}
+    timer_id = Veggy.UUID.new
+    command_id = send_command %{"command" => "SquashPomodoro", "timer_id" => timer_id}
     command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
     assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
     refute_receive {:event, %{"event" => "PomodoroSquashed"}}

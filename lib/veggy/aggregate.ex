@@ -34,6 +34,43 @@ defmodule Veggy.Aggregate do
 
   # @callback process(event, state::any) :: state::any | error
 
+  defmacro __using__(_opts) do
+    quote do
+      # @behaviour Veggy.Aggregate
+
+      def route(_p), do: {:error, :unknown_command}
+      def fetch(_id, s), do: {:ok, s}
+      def store(_s), do: :ok
+      def check(s), do: {:ok, s}
+      def handle(_c, _s), do: {:error, :unknown_command}
+      def rollback(_c, _s), do: {:error, :unknown_command}
+      def process(_e, s), do: s
+
+      defp command(name, aggregate_id, aggregate_module \\ nil, parameters)
+      defp command(name, aggregate_id, nil, parameters), do: command(name, aggregate_id, __MODULE__, parameters)
+      defp command(name, aggregate_id, aggregate_module, parameters) do
+        %{"command" => name,
+          "aggregate_id" => aggregate_id,
+          "aggregate_module" => aggregate_module,
+          "_id" => Veggy.UUID.new}
+        |> merge_with(parameters)
+      end
+
+      defp event(name, aggregate_id \\ nil, parameters)
+      defp event(name, aggregate_id, parameters) do
+        %{"event" => name,
+          "aggregate_id" => aggregate_id,
+          "_id" => Veggy.UUID.new}
+        |> merge_with(parameters)
+      end
+
+      defp merge_with(m, o),
+        do: Enum.reduce(o, m, fn({k, v}, m) -> Map.put(m, to_string(k), v) end)
+
+      defoverridable [route: 1, fetch: 2, store: 1, check: 1, handle: 2, process: 2]
+    end
+  end
+
 
   def start_link(id, module) do
     GenServer.start_link(__MODULE__, %{id: id, module: module, aggregate: nil})
@@ -59,10 +96,12 @@ defmodule Veggy.Aggregate do
       {:ok, state} ->
         {:ok, state}
       {:ok, state, events} ->
+        events = correlate_events(events, state, module)
         state = process_events(events, module, state)
         commit_events(events)
         {:ok, state}
       {:ok, state, events, commands} ->
+        events = correlate_events(events, state, module)
         state = process_events(events, module, state)
         commit_events(events)
         route_commands(commands)
@@ -70,10 +109,12 @@ defmodule Veggy.Aggregate do
       {:error, reason} ->
         {:error, reason}
       {:error, reason, events} ->
+        events = correlate_events(events, state, module)
         process_events(events, module, state)
         commit_events(events)
         {:error, reason}
       {:error, reason, events, commands} ->
+        events = correlate_events(events, state, module)
         process_events(events, module, state)
         commit_events(events)
         route_commands(commands)
@@ -89,9 +130,8 @@ defmodule Veggy.Aggregate do
 
     # TODO: ensure every commands has what we need otherwise blow up and explain why
     # TODO: ensure every events has what we need otherwise blow up and explain why
-    # TODO: enrich emitted_events with: command id and other correlation ids known by the aggregate
-    #       should every aggregate have a special storage for correlation ids?
 
+    emitted_events = correlate_events(emitted_events, command, state.aggregate, state.module)
     outcome_event = correlate_outcome(outcome_event, emitted_events, related_commands)
     route_commands(command, related_commands)
     aggregate_state = process_events(emitted_events, state.module, state.aggregate)
@@ -112,9 +152,8 @@ defmodule Veggy.Aggregate do
       rollback_command(command, state.module, state.aggregate)
 
     # TODO: ensure every events has what we need otherwise blow up and explain why
-    # TODO: enrich emitted_events with: command id and other correlation ids known by the aggregate
-    #       should every aggregate have a special storage for correlation ids?
 
+    emitted_events = correlate_events(emitted_events, command, state.aggregate, state.module)
     outcome_event = correlate_outcome(outcome_event, emitted_events, [])
     aggregate_state = process_events(emitted_events, state.module, state.aggregate)
     commit_events([outcome_event | emitted_events])
@@ -151,6 +190,24 @@ defmodule Veggy.Aggregate do
       {:error, reason} -> raise reason # TODO: do something better
       # TODO: blow up but before explain what we are expecting
     end
+  end
+
+  defp correlate_events(events, %{"command" => _, "_id" => command_id}, state, module) do
+    Enum.map(events, &Map.put(&1, "command_id", command_id)) |> correlate_events(state, module)
+  end
+  defp correlate_events(events, state, module) do
+    Enum.map(events, &Map.merge(&1, correlation_ids_in(state, module)))
+  end
+
+  defp correlation_ids_in(state, module) do
+    keys = Enum.filter_map(state, fn({k, _v}) -> String.ends_with?(k, "_id") end, &elem(&1, 0))
+    Map.take(state, keys)
+    |> Map.put("aggregate_id", state["id"])
+    |> Map.put(aggregate_id_key(module), state["id"])
+  end
+
+  defp aggregate_id_key(module) do
+    "#{module |> Module.split |> List.last |> String.downcase}_id"
   end
 
   defp correlate_outcome(outcome, events, {_, commands}),
