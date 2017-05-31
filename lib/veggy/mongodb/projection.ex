@@ -46,10 +46,10 @@ defmodule Veggy.MongoDB.Projection do
         end
       end
 
-      def fetch(record_id) do
+      def fetch(record_id, record_default) do
         # TODO: use internal find and handle errors
         case Mongo.find(Veggy.MongoDB, @collection, %{"_id" => record_id}) |> Enum.to_list do
-          [] -> {:ok, Map.put(@default, "_id", record_id)}
+          [] -> {:ok, Map.put(record_default, "_id", record_id)}
           [d] -> {:ok, Veggy.MongoDB.from_document(d)}
         end
       end
@@ -66,7 +66,7 @@ defmodule Veggy.MongoDB.Projection do
         Mongo.save_one(Veggy.MongoDB, @collection, %{"_id" => "_offset", "_offset" => offset})
       end
 
-      defoverridable [init: 0, identity: 1, offset: 0, fetch: 1, store: 2, delete: 2]
+      defoverridable [init: 0, identity: 1, offset: 0, fetch: 2, store: 2, delete: 2]
 
       def find(query, options \\ []) do
         # TODO: handle errors

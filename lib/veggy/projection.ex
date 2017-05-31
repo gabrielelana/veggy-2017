@@ -13,7 +13,7 @@ defmodule Veggy.Projection do
   # @callback init() :: {:ok, default :: record, event_filter} | error
   # @callback identity(event) :: {:ok, record_id :: any} | error
   # @callback offset() :: {:ok, offset} | error
-  # @callback fetch(record_id :: any) :: {:ok, record} | error
+  # @callback fetch(record_id :: any, default :: record) :: {:ok, record} | error
   # @callback store(record, offset) :: :ok | error
   # @callback delete(record) :: :ok | error
   # @callback query(name :: String.t, parameters :: Map.t) :: {:ok, [record]} | error
@@ -36,14 +36,14 @@ defmodule Veggy.Projection do
       init: &module.init/0,
       identity: &module.identity/1,
       process: &module.process/2,
-      fetch: fn(id) -> {:ok, Agent.get(pid, &Map.get(&1, id, default |> Map.put("_id", id)))} end,
+      fetch: fn(id, default) -> {:ok, Agent.get(pid, &Map.get(&1, id, default |> Map.put("_id", id)))} end,
       store: fn(record, _offset) -> Agent.update(pid, &Map.put(&1, record["_id"], record)) end,
       delete: fn(record, _offset) -> Agent.update(pid, &Map.delete(&1, record["_id"])) end
     }
 
     Enum.each(events, fn(event) ->
       try do
-        do_process(stub, event, 0)
+        do_process(stub, default, event, 0)
       rescue
         FunctionClauseError -> 0
       end
@@ -67,14 +67,14 @@ defmodule Veggy.Projection do
     # IO.inspect("Poll events from EventStore after offset #{state.offset}")
     events = Veggy.EventStore.events_where({:offset_after, state.offset}, state.filter)
     # IO.inspect({:events, Enum.count(events)})
-    offset = Enum.reduce(events, state.offset, &do_process(state.module, &1, &2))
+    offset = Enum.reduce(events, state.offset, &do_process(state.module, state.default, &1, &2))
     Process.send_after(self(), :process, @polling_interval)
     {:noreply, %{state|offset: offset}}
   end
 
-  defp do_process(module, %{"_offset" => offset} = event, _offset) do
+  defp do_process(module, default, %{"_offset" => offset} = event, _offset) do
     with {:ok, record_id} <- call(module, :identity, [event]),
-         {:ok, record} <- call(module, :fetch, [record_id]) do
+         {:ok, record} <- call(module, :fetch, [record_id, default]) do
       case call(module, :process, [event, record]) do
         :skip -> :ok
         :delete -> call(module, :delete, [record, offset])
