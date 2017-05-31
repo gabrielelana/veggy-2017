@@ -24,7 +24,7 @@ defmodule Veggy do
 
   defp aggregates do
     if Application.get_env(:veggy, :enable_aggregates, true),
-      do: worker(Veggy.Aggregates, [[]]),
+      do: worker(Veggy.Aggregates, [[Veggy.Aggregate.Ping]]),
       else: nil
   end
 
