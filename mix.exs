@@ -4,7 +4,7 @@ defmodule Veggy.Mixfile do
   def project do
     [app: :veggy,
      version: "0.1.0",
-     elixir: "~> 1.3",
+     elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      deps: deps()]
@@ -22,7 +22,7 @@ defmodule Veggy.Mixfile do
      {:poolboy, "~> 1.5.1"},
      {:poison, "~> 2.2.0"},
      {:inflex, "~> 1.7.0"},
-     {:timex, "~> 3.0"},
-     {:cors_plug, "~> 1.1"}]
+     {:timex, "~> 3.1"},
+     {:cors_plug, "~> 1.2"}]
   end
 end
