@@ -34,7 +34,8 @@ defmodule Veggy do
   defp projections do
     if Application.get_env(:veggy, :enable_projections, true),
       do: worker(Veggy.Projections, [[Veggy.Projection.Commands,
-                                      Veggy.Projection.Ping]]),
+                                      Veggy.Projection.Ping,
+                                      Veggy.Projection.LatestPomodori]]),
       else: nil
   end
 
