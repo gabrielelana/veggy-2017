@@ -64,7 +64,7 @@ defmodule Veggy.AcceptanceTest do
 
   defp subscribe_to_event(event) when is_binary(event), do: subscribe_to_event(%{"event" => event})
   defp subscribe_to_event(%{"event" => event}) do
-    Veggy.EventStore.subscribe(self(), &match?(%{"event" => ^event}, &1))
+    Veggy.EventStore.subscribe(self, &match?(%{"event" => ^event}, &1))
   end
 
   defp send_command(command) do
