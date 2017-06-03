@@ -49,7 +49,6 @@ defmodule Veggy.MongoDB.Projection do
       end
 
       def fetch(record_id, record_default) do
-        # TODO: use internal find and handle errors
         case Mongo.find(Veggy.MongoDB, @collection, %{"_id" => record_id}) |> Enum.to_list do
           [] -> {:ok, Map.put(record_default, "_id", record_id)}
           [d] -> {:ok, Veggy.MongoDB.from_document(d)}

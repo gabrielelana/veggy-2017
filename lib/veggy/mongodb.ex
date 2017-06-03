@@ -29,6 +29,19 @@ defmodule Veggy.MongoDB do
       {:ok, dt} = Elixir.DateTime.from_unix(milliseconds, :milliseconds)
       dt
     end
+
+    def in_day(day) do
+      case Timex.parse(day, "{YYYY}-{0M}-{0D}") do
+        {:ok, day} ->
+          beginning_of_day =
+            day |> Timex.beginning_of_day |> Timex.to_datetime |> Veggy.MongoDB.DateTime.from_datetime
+          end_of_day =
+            day |> Timex.end_of_day |> Timex.to_datetime |> Veggy.MongoDB.DateTime.from_datetime
+          {:ok, beginning_of_day, end_of_day}
+        {:error, reason} ->
+          {:error, "day=#{day}: #{reason}"}
+      end
+    end
   end
 
   def to_document(%{__struct__: _} = d), do: d

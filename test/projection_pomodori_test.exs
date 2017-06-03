@@ -14,6 +14,7 @@ defmodule Veggy.ProjectionPomodoriTest do
               "_received_at" => :received_at,
               "pomodoro_id" => :pomodoro_id,
               "description" => :description,
+              "tags" => :tags,
               "timer_id" => :timer_id,
               "aggregate_id" => :timer_id,
               "shared_with" => [],
@@ -24,6 +25,8 @@ defmodule Veggy.ProjectionPomodoriTest do
     assert %{"started_at" => :received_at} = process event, record
     assert %{"timer_id" => :timer_id} = process event, record
     assert %{"duration" => :duration} = process event, record
+    assert %{"description" => :description} = process event, record
+    assert %{"tags" => :tags} = process event, record
     assert %{"shared_with" => []} = process event, record
   end
 

@@ -6,14 +6,15 @@ defmodule Veggy.Projection do
   # @type event_type :: String.t
   # @type event :: %{"event" => event_type}
   # @type record :: %{...}
+  # @type record_id :: any
   # @type offset :: integer
   # @type event_filter :: event_type | (event -> bool) | [event_fiter]
   # @type error :: {:error, reason :: any}
   #
   # @callback init() :: {:ok, default :: record, event_filter} | error
-  # @callback identity(event) :: {:ok, record_id :: any} | error
+  # @callback identity(event) :: {:ok, record_id} | {:ok, [record_id]} | error
   # @callback offset() :: {:ok, offset} | error
-  # @callback fetch(record_id :: any, default :: record) :: {:ok, record} | error
+  # @callback fetch(record_id :: any, default :: record) :: {:ok, record} | {:ok, [record]} | error
   # @callback store(record, offset) :: :ok | error
   # @callback delete(record) :: :ok | error
   # @callback query(name :: String.t, parameters :: Map.t) :: {:ok, [record]} | error
@@ -72,18 +73,38 @@ defmodule Veggy.Projection do
     {:noreply, %{state|offset: offset}}
   end
 
+  # defp do_process(module, default, %{"_offset" => offset} = event, _offset) do
+  #   with {:ok, record_ids} <- call(module, :identity, [event]),
+  #        {:ok, records} <- call(module, :fetch, [record_ids, default]) do
+  #     Enum.each(records, fn(record) ->
+  #       case call(module, :process, [event, record]) do
+  #         :skip -> :ok
+  #         :delete -> call(module, :delete, [record, offset])
+  #         {:hold, _expected} -> raise "unimplemented"
+  #         {:error, _reason} -> raise "unimplemented"
+  #         record -> call(module, :store, [record, offset])
+  #       end
+  #     end)
+  #     offset
+  #   end
+  # end
   defp do_process(module, default, %{"_offset" => offset} = event, _offset) do
-    with {:ok, record_id} <- call(module, :identity, [event]),
-         {:ok, record} <- call(module, :fetch, [record_id, default]) do
-      case call(module, :process, [event, record]) do
-        :skip -> :ok
-        :delete -> call(module, :delete, [record, offset])
-        {:hold, _expected} -> raise "unimplemented"
-        {:error, _reason} -> raise "unimplemented"
-        record -> call(module, :store, [record, offset])
-      end
-      offset
+    with {:ok, record_ids} <- call(module, :identity, [event]) do
+      Enum.each(List.wrap(record_ids), fn(record_id) ->
+        with {:ok, records} <- call(module, :fetch, [record_id, default]) do
+          Enum.each(List.wrap(records), fn(record) ->
+            case call(module, :process, [event, record]) do
+              :skip -> :ok
+              :delete -> call(module, :delete, [record, offset])
+              {:hold, _expected} -> raise "unimplemented"
+              {:error, _reason} -> raise "unimplemented"
+              record -> call(module, :store, [record, offset])
+            end
+          end)
+        end
+      end)
     end
+    offset
   end
 
   defp call(module, function, args) when is_map(module), do: apply(module[function], args)
