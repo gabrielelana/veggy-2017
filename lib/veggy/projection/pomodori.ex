@@ -23,12 +23,6 @@ defmodule Veggy.Projection.Pomodori do
     |> Map.put("status", "squashed")
   end
 
-  def query("pomodori-by-tag", %{"tag" => tag, "timer_id" => timer_id}) do
-    timer_id = Veggy.MongoDB.ObjectId.from_string(timer_id)
-    tags = String.split(tag, ",", trim: true) |> Enum.map(&String.trim/1) |> Enum.map(&String.downcase/1)
-    find(%{"timer_id" => timer_id, "tags" => %{"$in" => tags}})
-  end
-
   def query("pomodori-of-the-day", %{"day" => day, "timer_id" => timer_id} = parameters) do
     timer_id = Veggy.MongoDB.ObjectId.from_string(timer_id)
     case Timex.parse(day, "{YYYY}-{0M}-{0D}") do
