@@ -20,9 +20,10 @@ defmodule Veggy.AcceptanceTest do
     subscribe_to_event %{"event" => "TimerCreated"}
 
     username = "gabriele"
+    user_id = Veggy.Aggregate.User.user_id(username)
     send_command %{"command" => "Login", "username" => username}
     assert_receive {:event, %{"event" => "LoggedIn", "username" => ^username}}
-    assert_receive {:event, %{"event" => "TimerCreated", "user_id" => ^username}}
+    assert_receive {:event, %{"event" => "TimerCreated", "user_id" => ^user_id}}
   end
 
   test "command StartPomodoro" do
