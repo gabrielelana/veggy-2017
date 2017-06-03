@@ -43,6 +43,7 @@ defmodule Veggy.Aggregate.Timer do
         pomodoro_id: pomodoro_id,
         duration: c["duration"],
         shared_with: c["shared_with"],
+        tags: Veggy.Task.extract_tags(c["description"]),
         description: c["description"])}
   end
   def handle(%{"command" => "SquashPomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
