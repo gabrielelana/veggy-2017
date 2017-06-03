@@ -16,6 +16,7 @@ defmodule Veggy.ProjectionPomodoriTest do
               "description" => :description,
               "timer_id" => :timer_id,
               "aggregate_id" => :timer_id,
+              "shared_with" => [],
               "duration" => :duration}
 
     assert %{"status" => "started"} = process event, record
@@ -23,6 +24,7 @@ defmodule Veggy.ProjectionPomodoriTest do
     assert %{"started_at" => :received_at} = process event, record
     assert %{"timer_id" => :timer_id} = process event, record
     assert %{"duration" => :duration} = process event, record
+    assert %{"shared_with" => []} = process event, record
   end
 
   test "process PomodoroCompleted" do
@@ -43,5 +45,12 @@ defmodule Veggy.ProjectionPomodoriTest do
 
     assert %{"status" => "squashed"} = process event, record
     assert %{"squashed_at" => :received_at} = process event, record
+  end
+
+  test "process PomodoroVoided" do
+    record = %{"status" => "started"}
+    event = %{"event" => "PomodoroVoided", "pomodoro_id" => :pomodoro_id}
+
+    assert :delete = process event, record
   end
 end

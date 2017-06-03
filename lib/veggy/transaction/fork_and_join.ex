@@ -13,14 +13,14 @@ defmodule Veggy.Transaction.ForkAndJoin do
 
   def handle_cast(:start, %{commands: commands} = state) do
     Enum.each(commands, fn(command) ->
-      command_id = command["id"]
+      command_id = command["_id"]
       Veggy.EventStore.subscribe(self(), &match?(%{"event" => "CommandSucceeded", "command_id" => ^command_id}, &1))
       Veggy.EventStore.subscribe(self(), &match?(%{"event" => "CommandFailed", "command_id" => ^command_id}, &1))
       Veggy.Aggregates.handle(command)
     end)
     state =
       state
-      |> Map.put(:waiting_for, Enum.map(commands, &Map.get(&1, "id")))
+      |> Map.put(:waiting_for, Enum.map(commands, &Map.get(&1, "_id")))
       |> Map.put(:succeeded, [])
       |> Map.put(:failed, [])
     {:noreply, state}
@@ -28,29 +28,29 @@ defmodule Veggy.Transaction.ForkAndJoin do
 
   def handle_cast(:done, %{parent: command, failed: []} = state) do
     Veggy.EventStore.emit(%{"event" => "CommandSucceeded",
-                            "command_id" => command["id"],
-                            "id" => Veggy.UUID.new})
+                            "command_id" => command["_id"],
+                            "_id" => Veggy.UUID.new})
     {:stop, :normal, state}
   end
   def handle_cast(:done, %{parent: command, failed: failed, succeeded: []} = state) do
     Veggy.EventStore.emit(%{"event" => "CommandFailed",
-                            "command_id" => command["id"],
+                            "command_id" => command["_id"],
                             "why" => %{"failed_commands" => failed},
-                            "id" => Veggy.UUID.new})
+                            "_id" => Veggy.UUID.new})
     {:stop, :normal, state}
   end
   def handle_cast(:done, %{parent: command, failed: failed, succeeded: succeeded} = state) do
     # TODO: use a map for commands
     Enum.each(succeeded, fn(command_id) ->
       state.commands
-      |> Enum.filter(fn(command) -> command["id"] == command_id end)
+      |> Enum.filter(fn(command) -> command["_id"] == command_id end)
       |> List.first
       |> Veggy.Aggregates.rollback
     end)
     Veggy.EventStore.emit(%{"event" => "CommandFailed",
-                            "command_id" => command["id"],
+                            "command_id" => command["_id"],
                             "why" => %{"failed_commands" => failed},
-                            "id" => Veggy.UUID.new})
+                            "_id" => Veggy.UUID.new})
     {:stop, :normal, state}
   end
 

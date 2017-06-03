@@ -67,7 +67,7 @@ defmodule Veggy.Aggregate do
       defp merge_with(m, o),
         do: Enum.reduce(o, m, fn({k, v}, m) -> Map.put(m, to_string(k), v) end)
 
-      defoverridable [route: 1, fetch: 2, store: 1, check: 1, handle: 2, process: 2]
+      defoverridable [route: 1, fetch: 2, store: 1, check: 1, handle: 2, process: 2, rollback: 2]
     end
   end
 

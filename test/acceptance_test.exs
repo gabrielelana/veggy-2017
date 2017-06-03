@@ -90,6 +90,85 @@ defmodule Veggy.AcceptanceTest do
     refute_receive {:event, %{"event" => "PomodoroSquashed"}}
   end
 
+  test "command StartSharedPomodoro" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroCompleted"}
+
+    driver_timer_id = Veggy.UUID.new
+    navigator_timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartSharedPomodoro",
+                   "timer_id" => driver_timer_id,
+                   "shared_with" => [navigator_timer_id],
+                   "duration" => 100}
+
+    {:event, %{"pomodoro_id" => driver_pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted",
+                                "timer_id" => ^driver_timer_id,
+                                "shared_with" => [^navigator_timer_id]}}
+
+    {:event, %{"pomodoro_id" => navigator_pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted",
+                                "timer_id" => ^navigator_timer_id,
+                                "shared_with" => [^driver_timer_id]}}
+
+    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^driver_pomodoro_id}}
+    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^navigator_pomodoro_id}}
+  end
+
+  test "command StartSharedPomodoro when one is ticking the other must rollback" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroVoided"}
+    subscribe_to_event %{"event" => "PomodoroCompleted"}
+    subscribe_to_event %{"event" => "CommandFailed"}
+
+    driver_timer_id = Veggy.UUID.new
+    navigator_timer_id = Veggy.UUID.new
+
+    send_command %{"command" => "StartPomodoro", "timer_id" => navigator_timer_id, "duration" => 200}
+    {:event, %{"pomodoro_id" => navigator_pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^navigator_timer_id}}
+
+    command_id = send_command %{"command" => "StartSharedPomodoro",
+                                "timer_id" => driver_timer_id,
+                                "shared_with" => [navigator_timer_id],
+                                "duration" => 100}
+    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
+
+    assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^driver_timer_id}}
+    assert_receive {:event, %{"event" => "PomodoroVoided", "timer_id" => ^driver_timer_id}}
+    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
+
+    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^navigator_pomodoro_id}}
+  end
+
+  test "command SquashSharedPomodoro" do
+    subscribe_to_event %{"event" => "PomodoroStarted"}
+    subscribe_to_event %{"event" => "PomodoroSquashed"}
+
+    driver_timer_id = Veggy.UUID.new
+    navigator_timer_id = Veggy.UUID.new
+    send_command %{"command" => "StartSharedPomodoro",
+                   "timer_id" => driver_timer_id,
+                   "shared_with" => [navigator_timer_id],
+                   "duration" => 100}
+
+    {:event, %{"pomodoro_id" => driver_pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted",
+                                "timer_id" => ^driver_timer_id,
+                                "shared_with" => [^navigator_timer_id]}}
+
+    {:event, %{"pomodoro_id" => navigator_pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted",
+                                "timer_id" => ^navigator_timer_id,
+                                "shared_with" => [^driver_timer_id]}}
+
+    send_command %{"command" => "SquashSharedPomodoro", "timer_id" => driver_timer_id}
+
+    assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^driver_pomodoro_id}}
+    assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^navigator_pomodoro_id}}
+  end
+
+
 
 
   defp subscribe_to_event(event) when is_binary(event), do: subscribe_to_event(%{"event" => event})
