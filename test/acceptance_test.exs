@@ -169,7 +169,62 @@ defmodule Veggy.AcceptanceTest do
     assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^navigator_pomodoro_id}}
   end
 
+  test "command TrackPomodoroCompleted" do
+    subscribe_to_event %{"event" => "PomodoroCompletedTracked"}
 
+    duration = 60000
+    timer_id = Veggy.UUID.new
+    started_at = Timex.add(Timex.now, Timex.Duration.from_hours(1) |> Timex.Duration.invert)
+    completed_at = Timex.add(started_at, Timex.Duration.from_milliseconds(duration))
+    send_command %{"command" => "TrackPomodoroCompleted",
+                   "timer_id" => timer_id,
+                   "started_at" => Timex.format!(started_at, "{RFC3339z}"),
+                   "completed_at" => Timex.format!(completed_at, "{RFC3339z}")}
+
+    assert_receive {:event, %{"event" => "PomodoroCompletedTracked", "aggregate_id" => ^timer_id}}
+  end
+
+  test "command TrackPomodoroCompleted when there's another pomodoro at the same time" do
+    subscribe_to_event %{"event" => "PomodoroCompletedTracked"}
+    subscribe_to_event %{"event" => "CommandFailed"}
+
+    duration = 60000
+    timer_id = Veggy.UUID.new
+    beginning_at = Timex.now
+    started_at = Timex.add(beginning_at, Timex.Duration.from_hours(1) |> Timex.Duration.invert)
+    completed_at = Timex.add(started_at, Timex.Duration.from_milliseconds(duration))
+    send_command %{"command" => "TrackPomodoroCompleted",
+                   "timer_id" => timer_id,
+                   "started_at" => Timex.format!(started_at, "{RFC3339z}"),
+                   "completed_at" => Timex.format!(completed_at, "{RFC3339z}")}
+
+    assert_receive {:event, %{"event" => "PomodoroCompletedTracked", "aggregate_id" => ^timer_id}}
+
+    started_at = Timex.add(beginning_at, Timex.Duration.from_milliseconds(duration / 2))
+    completed_at = Timex.add(started_at, Timex.Duration.from_milliseconds(duration))
+    command_id = send_command %{"command" => "TrackPomodoroCompleted",
+                                "timer_id" => timer_id,
+                                "started_at" => Timex.format!(started_at, "{RFC3339z}"),
+                                "completed_at" => Timex.format!(completed_at, "{RFC3339z}")}
+    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
+
+    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
+  end
+
+  test "command TrackPomodoroSquashed" do
+    subscribe_to_event %{"event" => "PomodoroSquashedTracked"}
+
+    duration = 60000
+    timer_id = Veggy.UUID.new
+    started_at = Timex.add(Timex.now, Timex.Duration.from_hours(1) |> Timex.Duration.invert)
+    squashed_at = Timex.add(started_at, Timex.Duration.from_milliseconds(duration))
+    send_command %{"command" => "TrackPomodoroSquashed",
+                   "timer_id" => timer_id,
+                   "started_at" => Timex.format!(started_at, "{RFC3339z}"),
+                   "squashed_at" => Timex.format!(squashed_at, "{RFC3339z}")}
+
+    assert_receive {:event, %{"event" => "PomodoroSquashedTracked", "aggregate_id" => ^timer_id}}
+  end
 
 
   defp subscribe_to_event(event) when is_binary(event), do: subscribe_to_event(%{"event" => event})
