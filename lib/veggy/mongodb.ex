@@ -1,14 +1,7 @@
 defmodule Veggy.MongoDB do
   use Mongo.Pool, name: __MODULE__, adapter: Mongo.Pool.Poolboy
 
-  def child_spec do
-    Supervisor.Spec.worker(__MODULE__,
-      [[hostname: System.get_env("MONGODB_HOST") || "localhost",
-        database: System.get_env("MONGODB_DBNAME") || dbname(),
-        username: System.get_env("MONGODB_USERNAME"),
-        password: System.get_env("MONGODB_PASSWORD"),
-       ]])
-  end
+  def child_spec, do: Supervisor.Spec.worker(__MODULE__, [connection_spec()])
 
   defmodule ObjectId do
     def from_string(object_id) when is_binary(object_id) do
@@ -58,7 +51,6 @@ defmodule Veggy.MongoDB do
   defp decode(%{} = v), do: from_document(v)
   defp decode(v), do: v
 
-
   def collection_name(module_name) do
     module_name
     |> Module.split
@@ -71,8 +63,7 @@ defmodule Veggy.MongoDB do
     Mongo.run_command(Veggy.MongoDB,
       %{createIndexes: collection_name,
         indexes: [
-          %{"ns" => "#{dbname()}.#{collection_name}",
-            "key" => index_keys,
+          %{"key" => index_keys,
             "name" => generate_index_name(index_keys)
            }
         ]})
@@ -85,10 +76,34 @@ defmodule Veggy.MongoDB do
       end)
   end
 
-  defp dbname do
-    case Mix.env do
-      :prod -> "veggy"
-      env -> "veggy_#{env}"
-    end
+  defp connection_spec() do
+    mongodb_uri = System.get_env("MONGODB_URI")
+    connection_spec(mongodb_uri)
   end
+  defp connection_spec(nil), do: [
+    hostname: System.get_env("MONGODB_HOST") || "localhost",
+    port: System.get_env("MONGODB_PORT") || 27017,
+    database: System.get_env("MONGODB_DBNAME") || connection_database(),
+    username: System.get_env("MONGODB_USERNAME"),
+    password: System.get_env("MONGODB_PASSWORD"),
+  ]
+  defp connection_spec(uri) do
+    uri_components = URI.parse(uri)
+    [hostname: connection_hostname(uri_components),
+     port: connection_port(uri_components),
+     database: connection_database(uri_components),
+     username: connection_username(uri_components),
+     password: connection_password(uri_components),
+    ]
+  end
+  defp connection_hostname(%URI{host: host}), do: host
+  defp connection_port(%URI{port: port}), do: port
+  defp connection_username(%URI{userinfo: nil}), do: nil
+  defp connection_username(%URI{userinfo: userinfo}), do: userinfo |> String.split(":") |> List.first
+  defp connection_password(%URI{userinfo: nil}), do: nil
+  defp connection_password(%URI{userinfo: userinfo}), do: userinfo |> String.split(":") |> List.last
+  defp connection_database(), do: connection_database(Mix.env())
+  defp connection_database(%URI{path: path}), do: Path.basename(path)
+  defp connection_database(:prod), do: "veggy"
+  defp connection_database(env), do: "veggy_#{env}"
 end

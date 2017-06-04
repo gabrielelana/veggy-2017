@@ -14,7 +14,7 @@ defmodule Veggy do
       aggregates(),
       projections(),
       Plug.Adapters.Cowboy.child_spec(:http, Veggy.HTTP, [],
-        [port: 4000, dispatch: dispatch()]),
+        [port: port(System.get_env("PORT")), dispatch: dispatch()]),
     ] |> Enum.reject(&is_nil/1)
 
     # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html
@@ -45,4 +45,7 @@ defmodule Veggy do
     otherwise = {:_, Plug.Adapters.Cowboy.Handler, {Veggy.HTTP, []}}
     [{:_, [websocket, otherwise]}]
   end
+
+  defp port(nil), do: 4000
+  defp port(port), do: String.to_integer(port)
 end
