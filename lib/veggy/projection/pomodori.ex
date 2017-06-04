@@ -1,4 +1,5 @@
 defmodule Veggy.Projection.Pomodori do
+  use Testable
   use Veggy.MongoDB.Projection,
     collection: "projection.pomodori",
     events: ["PomodoroStarted", "PomodoroSquashed", "PomodoroCompleted",
@@ -34,23 +35,14 @@ defmodule Veggy.Projection.Pomodori do
     timer_id = Veggy.MongoDB.ObjectId.from_string(timer_id)
     case Veggy.MongoDB.DateTime.in_day(day) do
       {:ok, beginning_of_day, end_of_day} ->
-        {:ok, pomodori} = find(%{"started_at" => %{"$gte" => beginning_of_day, "$lte" => end_of_day},
-                                 "timer_id" => timer_id,
-                                })
-
-        {:ok, pomodori
-        |> Enum.filter(fn(p) -> Map.has_key?(p, "completed_at") end)
-        |> Enum.map(&Map.take(&1, ["tags", "duration"]))
-        |> Enum.flat_map(fn(p) -> for tag <- p["tags"], do: %{"tag" => tag, "pomodori" => 1, "duration" => p["duration"]} end)
-        |> Enum.group_by(&Map.get(&1, "tag"))
-        |> Map.values()
-        |> Enum.map(&Enum.reduce(&1, fn(p, a) -> %{a|"pomodori" => a["pomodori"] + 1, "duration" => a["duration"] + p["duration"]} end))
-        }
+        with {:ok, pomodori} <- find(%{"started_at" => %{"$gte" => beginning_of_day, "$lte" => end_of_day},
+                                       "timer_id" => timer_id}) do
+          {:ok, group_by_tag(pomodori)}
+        end
       {:error, reason} ->
         {:error, reason}
     end
   end
-
   def query("pomodori-of-the-day", %{"day" => day, "timer_id" => timer_id}) do
     timer_id = Veggy.MongoDB.ObjectId.from_string(timer_id)
     case Veggy.MongoDB.DateTime.in_day(day) do
@@ -61,5 +53,16 @@ defmodule Veggy.Projection.Pomodori do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+
+  defpt group_by_tag(pomodori) do
+    pomodori
+    |> Enum.filter(fn(p) -> p["status"] == "completed" end)
+    |> Enum.map(&Map.take(&1, ["tags", "duration"]))
+    |> Enum.flat_map(fn(p) -> for tag <- p["tags"], do: %{"tag" => tag, "pomodori" => 1, "duration" => p["duration"]} end)
+    |> Enum.group_by(&Map.get(&1, "tag"))
+    |> Map.values()
+    |> Enum.map(&Enum.reduce(&1, fn(p, a) -> %{a|"pomodori" => a["pomodori"] + 1, "duration" => a["duration"] + p["duration"]} end))
   end
 end
