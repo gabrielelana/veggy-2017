@@ -56,4 +56,49 @@ defmodule Veggy.ProjectionPomodoriTest do
 
     assert :delete = process event, record
   end
+
+  test "group_by_tag" do
+    pomodori = [%{"status" => "completed", "duration" => 100, "tags" => ["foo"]}]
+    groupped = group_by_tag(pomodori)
+
+    assert %{"duration" => 100, "pomodori" => 1, "tag" => "foo"} in groupped
+    assert 1 == Enum.count(groupped)
+  end
+
+  test "group_by_tags with multiple tags in single pomodoro" do
+    pomodori = [%{"status" => "completed", "duration" => 100, "tags" => ["foo", "bar"]}]
+    groupped = group_by_tag(pomodori)
+
+    assert %{"duration" => 100, "pomodori" => 1, "tag" => "bar"} in groupped
+    assert %{"duration" => 100, "pomodori" => 1, "tag" => "foo"} in groupped
+    assert 2 == Enum.count(groupped)
+  end
+
+  test "group_by_tags pomodori and duration will sum on the same tag" do
+    pomodori = [%{"status" => "completed", "duration" => 100, "tags" => ["foo", "bar"]},
+                %{"status" => "completed", "duration" => 100, "tags" => ["foo"]}]
+    groupped = group_by_tag(pomodori)
+
+    assert %{"duration" => 100, "pomodori" => 1, "tag" => "bar"} in groupped
+    assert %{"duration" => 200, "pomodori" => 2, "tag" => "foo"} in groupped
+    assert 2 == Enum.count(groupped)
+  end
+
+  test "group_by_tags will skip pomodori not completed" do
+    pomodori = [%{"status" => "started", "duration" => 100, "tags" => ["foo", "bar"]},
+                %{"status" => "completed", "duration" => 100, "tags" => ["foo"]}]
+    groupped = group_by_tag(pomodori)
+
+    assert %{"duration" => 100, "pomodori" => 1, "tag" => "foo"} in groupped
+    assert 1 == Enum.count(groupped)
+  end
+
+  test "group_by_tags will ignore pomodori withtout tags" do
+    pomodori = [%{"status" => "started", "duration" => 100, "tags" => []},
+                %{"status" => "completed", "duration" => 100, "tags" => ["foo"]}]
+    groupped = group_by_tag(pomodori)
+
+    assert %{"duration" => 100, "pomodori" => 1, "tag" => "foo"} in groupped
+    assert 1 == Enum.count(groupped)
+  end
 end
