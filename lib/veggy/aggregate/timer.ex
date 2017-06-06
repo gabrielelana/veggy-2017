@@ -5,8 +5,10 @@ defmodule Veggy.Aggregate.Timer do
 
   @default_duration 1_500_000   # 25 minutes in milliseconds
 
-  defp aggregate_id(%{"timer_id" => timer_id}),
+  defp aggregate_id(%{"timer_id" => timer_id}) when is_binary(timer_id),
     do: Veggy.MongoDB.ObjectId.from_string(timer_id)
+  defp aggregate_id(%{"timer_id" => timer_id}),
+    do: timer_id
 
   def route(%{"command" => "StartPomodoro"} = p) do
     {:ok, command("StartPomodoro", aggregate_id(p),
@@ -27,6 +29,10 @@ defmodule Veggy.Aggregate.Timer do
   def route(%{"command" => "SquashSharedPomodoro"} = p) do
     {:ok, command("SquashSharedPomodoro", aggregate_id(p),
         reason: Map.get(p, "reason", ""))}
+  end
+  def route(%{"command" => "CompletePomodoro"} = p) do
+    {:ok, command("CompletePomodoro", aggregate_id(p),
+        pomodoro_id: Map.get(p, "pomodoro_id"))}
   end
   def route(%{"command" => "TrackPomodoroCompleted"} = p) do
     with {:ok, started_at, ended_at, duration} <- route_tracked(p, "completed_at") do
@@ -63,7 +69,6 @@ defmodule Veggy.Aggregate.Timer do
   end
 
   def init(id) do
-    Veggy.EventStore.subscribe(self(), &match?(%{"event" => "PomodoroCompleted", "aggregate_id" => ^id}, &1))
     {:ok, %{"id" => id, "ticking" => false}}
   end
 
@@ -79,7 +84,7 @@ defmodule Veggy.Aggregate.Timer do
   end
   def handle(%{"command" => "StartPomodoro"}, %{"ticking" => true}), do: {:error, "Pomodoro is ticking"}
   def handle(%{"command" => "StartPomodoro"} = c, s) do
-    {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"], s["user_id"], c["_id"])
+    {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"])
     {:ok, event("PomodoroStarted",
         pomodoro_id: pomodoro_id,
         duration: c["duration"],
@@ -93,6 +98,9 @@ defmodule Veggy.Aggregate.Timer do
     {:ok, event("PomodoroSquashed",
         reason: c["reason"])}
   end
+  def handle(%{"command" => "CompletePomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
+  def handle(%{"command" => "CompletePomodoro"}, _s), do: {:ok, event("PomodoroCompleted", [])}
+
   def handle(%{"command" => "StartSharedPomodoro", "shared_with" => shared_with} = c, s) do
     pair = [s["id"] | shared_with]
     commands = Enum.map(pair, fn(id) ->
