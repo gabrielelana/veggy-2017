@@ -53,8 +53,13 @@ defmodule Veggy.Projection.Pomodori do
     end
   end
 
-
   defpt group_by_tag(pomodori) do
-    []
+    pomodori
+    |> Enum.filter(fn(p) -> p["status"] == "completed" end)
+    |> Enum.map(&Map.take(&1, ["tags", "duration"]))
+    |> Enum.flat_map(fn(p) -> for tag <- p["tags"], do: %{"tag" => tag, "pomodori" => 1, "duration" => p["duration"]} end)
+    |> Enum.group_by(&Map.get(&1, "tag"))
+    |> Map.values()
+    |> Enum.map(&Enum.reduce(&1, fn(p, a) -> %{a|"pomodori" => a["pomodori"] + 1, "duration" => a["duration"] + p["duration"]} end))
   end
 end

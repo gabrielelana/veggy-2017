@@ -18,14 +18,4 @@ defmodule Veggy.TaskTest do
   test "extracted tags must be unique" do
     assert ["foo"] == extract_tags("#foo xxx #foo")
   end
-
-  test "extract combined tags with >" do
-    assert ["foo", "foo>bar"] == extract_tags("#foo>bar")
-    assert ["foo", "foo>bar", "foo>bar>baz"] == extract_tags("#foo>bar>baz")
-  end
-
-  test "extract combined tags with +" do
-    assert ["bar", "foo", "foo>bar"] == extract_tags("#foo+bar")
-    assert ["bar", "baz", "foo", "foo>bar", "foo>bar>baz"] == extract_tags("#foo+bar+baz")
-  end
 end
