@@ -1,17 +1,23 @@
 defmodule Veggy.Aggregate.Timer do
   @default_duration 1_500_000   # 25 minutes in milliseconds
 
-  def route(%{"command" => "StartPomodoro"} = params) do
+  def route(p = %{"command" => "StartPomodoro"}) do
     {:ok, %{"command" => "StartPomodoro",
             "aggregate_id" => "timer",
             "aggregate_module" => __MODULE__,
-            "duration" => Map.get(params, "duration", @default_duration),
-            "description" => Map.get(params, "description", ""),
+            "duration" => Map.get(p, "duration", @default_duration),
+            "description" => Map.get(p, "description", ""),
+            "_id" => Veggy.UUID.new}}
+  end
+  def route(p = %{"command" => "CompletePomodoro"}) do
+    {:ok, %{"command" => "CompletePomodoro",
+            "aggregate_id" => "timer",
+            "aggregate_module" => __MODULE__,
+            "pomodoro_id" => Map.get(p, "pomodoro_id"),
             "_id" => Veggy.UUID.new}}
   end
 
   def init(id) do
-    Veggy.EventStore.subscribe(self(), &match?(%{"event" => "PomodoroCompleted", "aggregate_id" => ^id}, &1))
     {:ok, %{"id" => id, "ticking" => false}}
   end
 
@@ -31,17 +37,25 @@ defmodule Veggy.Aggregate.Timer do
     {:ok, s}
   end
 
+
   def handle(%{"command" => "StartPomodoro"}, %{"ticking" => true}), do: {:error, "Pomodoro is ticking"}
-  def handle(%{"command" => "StartPomodoro"} = c, s) do
-    {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"], c["_id"])
+  def handle(c = %{"command" => "StartPomodoro"}, s) do
+    {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"])
     {:ok, %{"event" => "PomodoroStarted",
-            "pomodoro_id" => pomodoro_id,
-            "user_id" => s["user_id"],
             "command_id" => c["_id"],
             "aggregate_id" => s["id"],
-            "timer_id" => s["id"],
+            "pomodoro_id" => pomodoro_id,
             "duration" => c["duration"],
             "description" => c["description"],
+            "_id" => Veggy.UUID.new}}
+  end
+
+  def handle(%{"command" => "CompletePomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
+  def handle(c = %{"command" => "CompletePomodoro"}, s) do
+    {:ok, %{"event" => "PomodoroCompleted",
+            "command_id" => c["_id"],
+            "aggregate_id" => s["id"],
+            "pomodoro_id" => c["pomodoro_id"],
             "_id" => Veggy.UUID.new}}
   end
 
