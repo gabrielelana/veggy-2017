@@ -1,8 +1,7 @@
 defmodule Veggy.Projection.LatestPomodori do
   use Veggy.MongoDB.Projection,
     collection: "projection.latest_pomodori",
-    events: ["LoggedIn", "PomodoroStarted", "PomodoroSquashed", "PomodoroCompleted",
-             "PomodoroVoided"],
+    events: ["LoggedIn", "PomodoroStarted", "PomodoroSquashed", "PomodoroCompleted", "PomodoroVoided"],
     identity: "timer_id"
 
   def process(%{"event" => "LoggedIn"} = event, record) do
