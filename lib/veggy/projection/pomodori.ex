@@ -2,8 +2,7 @@ defmodule Veggy.Projection.Pomodori do
   use Testable
   use Veggy.MongoDB.Projection,
     collection: "projection.pomodori",
-    events: ["PomodoroStarted", "PomodoroSquashed", "PomodoroCompleted",
-             "PomodoroVoided"],
+    events: ["PomodoroStarted", "PomodoroSquashed", "PomodoroCompleted", "PomodoroVoided"],
     identity: "pomodoro_id"
 
   def process(%{"event" => "PomodoroStarted"} = event, record) do
