@@ -4,7 +4,6 @@ defmodule Veggy.Aggregate.Timer do
 
   @default_duration 1_500_000   # 25 minutes in milliseconds
 
-
   defp aggregate_id(%{"timer_id" => timer_id}) when is_binary(timer_id),
     do: Veggy.MongoDB.ObjectId.from_string(timer_id)
   defp aggregate_id(%{"timer_id" => timer_id}),
@@ -54,9 +53,9 @@ defmodule Veggy.Aggregate.Timer do
     {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"])
     {:ok, event("PomodoroStarted",
         pomodoro_id: pomodoro_id,
-        shared_with: c["shared_with"],
         duration: c["duration"],
         shared_with: c["shared_with"],
+        tags: Veggy.Task.extract_tags(c["description"]),
         description: c["description"])}
   end
   def handle(%{"command" => "CompletePomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
