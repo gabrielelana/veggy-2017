@@ -5,8 +5,10 @@ defmodule Veggy.Aggregate.Timer do
 
   @default_duration 1_500_000   # 25 minutes in milliseconds
 
-  defp aggregate_id(%{"timer_id" => timer_id}),
+  defp aggregate_id(%{"timer_id" => timer_id}) when is_binary(timer_id),
     do: Veggy.MongoDB.ObjectId.from_string(timer_id)
+  defp aggregate_id(%{"timer_id" => timer_id}),
+    do: timer_id
 
   def route(%{"command" => "StartPomodoro"} = p) do
     {:ok, command("StartPomodoro", aggregate_id(p),
@@ -19,6 +21,10 @@ defmodule Veggy.Aggregate.Timer do
         duration: Map.get(p, "duration", @default_duration),
         shared_with: Map.get(p, "shared_with", []) |> Enum.map(&Veggy.MongoDB.ObjectId.from_string/1),
         description: Map.get(p, "description", ""))}
+  end
+  def route(%{"command" => "CompletePomodoro"} = p) do
+    {:ok, command("CompletePomodoro", aggregate_id(p),
+        [])}
   end
   def route(%{"command" => "SquashPomodoro"} = p) do
     {:ok, command("SquashPomodoro", aggregate_id(p),
@@ -63,7 +69,6 @@ defmodule Veggy.Aggregate.Timer do
   end
 
   def init(id) do
-    Veggy.EventStore.subscribe(self(), &match?(%{"event" => "PomodoroCompleted", "aggregate_id" => ^id}, &1))
     {:ok, %{"id" => id, "ticking" => false}}
   end
 
@@ -79,7 +84,7 @@ defmodule Veggy.Aggregate.Timer do
   end
   def handle(%{"command" => "StartPomodoro"}, %{"ticking" => true}), do: {:error, "Pomodoro is ticking"}
   def handle(%{"command" => "StartPomodoro"} = c, s) do
-    {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"], s["user_id"], c["_id"])
+    {:ok, pomodoro_id} = Veggy.Countdown.start(c["duration"], s["id"])
     {:ok, event("PomodoroStarted",
         pomodoro_id: pomodoro_id,
         duration: c["duration"],
@@ -87,11 +92,22 @@ defmodule Veggy.Aggregate.Timer do
         tags: Veggy.Task.extract_tags(c["description"]),
         description: c["description"])}
   end
+  def handle(%{"command" => "CompletePomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
+  def handle(%{"command" => "CompletePomodoro"}, _) do
+    {:ok, event("PomodoroCompleted", [])}
+  end
   def handle(%{"command" => "SquashPomodoro"}, %{"ticking" => false}), do: {:error, "Pomodoro is not ticking"}
   def handle(%{"command" => "SquashPomodoro"} = c, %{"pomodoro_id" => pomodoro_id}) do
     :ok = Veggy.Countdown.squash(pomodoro_id)
-    {:ok, event("PomodoroSquashed",
-        reason: c["reason"])}
+    {:ok, event("PomodoroSquashed", reason: c["reason"])}
+  end
+  def handle(%{"command" => "SquashSharedPomodoro"} = c, %{"shared_with" => shared_with} = s) do
+    pair = [s["id"] | shared_with]
+    commands = Enum.map(pair, fn(id) ->
+      command("SquashPomodoro", id,
+        reason: c["reason"])
+    end)
+    {:ok, [], {:fork, commands}}
   end
   def handle(%{"command" => "StartSharedPomodoro", "shared_with" => shared_with} = c, s) do
     pair = [s["id"] | shared_with]
@@ -115,12 +131,12 @@ defmodule Veggy.Aggregate.Timer do
     case check_compatibility(c["started_at"], c["completed_at"], s) do
       :ok ->
         {:ok, event("PomodoroCompletedTracked",
-          pomodoro_id: Veggy.UUID.new,
-          duration: c["duration"],
-          started_at: c["started_at"],
-          completed_at: c["completed_at"],
-          description: c["description"],
-          tags: Veggy.Task.extract_tags(c["description"]))}
+            pomodoro_id: Veggy.UUID.new,
+            duration: c["duration"],
+            started_at: c["started_at"],
+            completed_at: c["completed_at"],
+            description: c["description"],
+            tags: Veggy.Task.extract_tags(c["description"]))}
       {:error, _} = error ->
         error
     end
@@ -129,12 +145,12 @@ defmodule Veggy.Aggregate.Timer do
     case check_compatibility(c["started_at"], c["squashed_at"], s) do
       :ok ->
         {:ok, event("PomodoroSquashedTracked",
-          pomodoro_id: Veggy.UUID.new,
-          duration: c["duration"],
-          started_at: c["started_at"],
-          squashed_at: c["squashed_at"],
-          description: c["description"],
-          tags: Veggy.Task.extract_tags(c["description"]))}
+            pomodoro_id: Veggy.UUID.new,
+            duration: c["duration"],
+            started_at: c["started_at"],
+            squashed_at: c["squashed_at"],
+            description: c["description"],
+            tags: Veggy.Task.extract_tags(c["description"]))}
       {:error, _} = error ->
         error
     end
@@ -146,18 +162,31 @@ defmodule Veggy.Aggregate.Timer do
     {:ok, event("PomodoroVoided", [])}
   end
 
-  def process(%{"event" => "TimerCreated", "user_id" => user_id}, s),
-    do: Map.put(s, "user_id", user_id)
-  def process(%{"event" => "PomodoroStarted"} = e, s),
-    do: %{s | "ticking" => true} |> Map.merge(Map.take(e, ["pomodoro_id", "shared_with"]))
-  def process(%{"event" => "PomodoroSquashed"}, s),
-    do: %{s | "ticking" => false} |> Map.delete("pomodoro_id") |> Map.delete("shared_with")
-  def process(%{"event" => "PomodoroCompleted"}, s),
-    do: %{s | "ticking" => false} |> Map.delete("pomodoro_id") |> Map.delete("shared_with")
-  def process(%{"event" => "PomodoroVoided"}, s),
-    do: %{s | "ticking" => false} |> Map.delete("pomodoro_id") |> Map.delete("shared_with")
-  def process(_, s), do: s
-
+  def process(%{"event" => "TimerCreated", "user_id" => user_id}, s) do
+    Map.put(s, "user_id", user_id)
+  end
+  def process(%{"event" => "PomodoroStarted"} = e, s) do
+    %{s | "ticking" => true}
+    |> Map.put("pomodoro_id", e["pomodoro_id"])
+    |> Map.put("shared_with", e["shared_with"])
+  end
+  def process(%{"event" => "PomodoroSquashed"}, s) do
+    %{s | "ticking" => false}
+    |> Map.delete("pomodoro_id")
+    |> Map.delete("shared_with")
+  end
+  def process(%{"event" => "PomodoroCompleted"}, s) do
+    %{s | "ticking" => false}
+    |> Map.delete("pomodoro_id")
+    |> Map.delete("shared_with")
+  end
+  def process(%{"event" => "PomodoroVoided"}, s) do
+    %{s | "ticking" => false}
+    |> Map.delete("pomodoro_id")
+    |> Map.delete("shared_with")
+  end
+  def process(%{"event" => "PomodoroCompletedTracked"}, s), do: s
+  def process(%{"event" => "PomodoroSquashedTracked"}, s), do: s
 
   defp check_compatibility(started_at, ended_at, aggregate) do
     if Timex.before?(ended_at, Timex.now) do
