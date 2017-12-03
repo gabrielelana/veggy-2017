@@ -5,8 +5,11 @@ defmodule Veggy.Aggregates do
     GenServer.start_link(__MODULE__, %{modules: modules, registry: %{}}, name: __MODULE__)
   end
 
-  def handle(%Plug.Conn{} = request) do
-    case GenServer.call(__MODULE__, {:route, request.params}) do
+  def route(%Plug.Conn{} = request) do
+    route(request.params)
+  end
+  def route(%{"command" => _} = command) do
+    case GenServer.call(__MODULE__, {:route, command}) do
       {:ok, command} ->
         handle(command)
         {:ok, command}
@@ -14,6 +17,7 @@ defmodule Veggy.Aggregates do
         error
     end
   end
+
   def handle(%{"command" => _} = command) do
     GenServer.cast(__MODULE__, {:handle, command})
   end
