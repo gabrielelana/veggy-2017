@@ -29,7 +29,7 @@ defmodule Veggy.Projection.Pomodori do
     :delete
   end
 
-  def query("pomodori-of-the-day", %{"day" => day, "timer_id" => timer_id}) do
+  def query("tags-of-the-day", %{"day" => day, "timer_id" => timer_id}) do
     timer_id = Veggy.MongoDB.ObjectId.from_string(timer_id)
     case Veggy.MongoDB.DateTime.in_day(day) do
       {:ok, beginning_of_day, end_of_day} ->
