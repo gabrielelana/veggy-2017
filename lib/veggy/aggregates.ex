@@ -5,15 +5,21 @@ defmodule Veggy.Aggregates do
     GenServer.start_link(__MODULE__, %{modules: modules, registry: %{}}, name: __MODULE__)
   end
 
+  def init(args) do
+    {:ok, args}
+  end
+
   def handle(%Plug.Conn{} = request) do
     case GenServer.call(__MODULE__, {:route, request.params}) do
       {:ok, command} ->
         handle(command)
         {:ok, command}
+
       {:error, _} = error ->
         error
     end
   end
+
   def handle(%{"command" => _} = command) do
     GenServer.cast(__MODULE__, {:handle, command})
   end
@@ -23,8 +29,8 @@ defmodule Veggy.Aggregates do
   end
 
   def handle_call({:route, request}, _from, %{modules: modules} = state) do
-    command = Enum.find_value(modules, {:error, :unknown_command},
-      fn(module) ->
+    command =
+      Enum.find_value(modules, {:error, :unknown_command}, fn module ->
         try do
           module.route(request)
         rescue
@@ -32,6 +38,7 @@ defmodule Veggy.Aggregates do
             nil
         end
       end)
+
     {:reply, command, state}
   end
 
@@ -41,6 +48,7 @@ defmodule Veggy.Aggregates do
     Veggy.Aggregate.handle(pid, command)
     {:noreply, %{state | registry: registry}}
   end
+
   def handle_cast({:rollback, command}, %{registry: registry} = state) do
     # TODO: how to ensure that a module implements a behaviour?
     {pid, registry} = aggregate_for(registry, command)
@@ -54,6 +62,7 @@ defmodule Veggy.Aggregates do
 
   # TODO: handle the death of the aggregate process
   defp spawn_aggregate(pid, _, _) when is_pid(pid), do: {pid, pid}
+
   defp spawn_aggregate(nil, id, module) do
     {:ok, pid} = Veggy.Aggregate.start_link(id, module)
     {pid, pid}
