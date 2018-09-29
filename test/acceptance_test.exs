@@ -5,190 +5,278 @@ defmodule Veggy.AcceptanceTest do
   import Plug.Conn
 
   setup_all do
-    Mongo.run_command(Veggy.MongoDB, [dropDatabase: 1])
+    Mongo.run_command(Veggy.MongoDB, dropDatabase: 1)
   end
 
   test "command Ping" do
-    subscribe_to_event %{"event" => "Pong"}
+    subscribe_to_event(%{"event" => "Pong"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
-    send_command %{"command" => "Ping"}
+    command_id = send_command(%{"command" => "Ping"})
+
     assert_receive {:event, %{"event" => "Pong"}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^command_id}}
   end
 
   test "command Login" do
-    subscribe_to_event %{"event" => "LoggedIn"}
-    subscribe_to_event %{"event" => "TimerCreated"}
+    subscribe_to_event(%{"event" => "LoggedIn"})
+    subscribe_to_event(%{"event" => "TimerCreated"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
     username = "gabriele"
     user_id = Veggy.Aggregate.User.user_id(username)
-    send_command %{"command" => "Login", "username" => username}
+    command_id = send_command(%{"command" => "Login", "username" => username})
+
     assert_receive {:event, %{"event" => "LoggedIn", "username" => ^username}}
     assert_receive {:event, %{"event" => "TimerCreated", "user_id" => ^user_id}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^command_id}}
   end
 
   test "command StartPomodoro" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroCompleted"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroCompleted"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
-    timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 10}
+    timer_id = Veggy.UUID.new()
+
+    command_id =
+      send_command(%{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 10})
+
     assert_receive {:event, %{"event" => "PomodoroStarted"}}
     assert_receive {:event, %{"event" => "PomodoroCompleted"}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^command_id}}
   end
 
   test "command StartPomodoro fails when another pomodoro is ticking" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroCompleted"}
-    subscribe_to_event %{"event" => "CommandFailed"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroCompleted"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
+    subscribe_to_event(%{"event" => "CommandFailed"})
 
-    timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 100}
-    {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
+    timer_id = Veggy.UUID.new()
 
-    command_id = send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 10}
-    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
-    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
+    first_start =
+      send_command(%{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 300})
+
+    {:event, %{"pomodoro_id" => pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted"}}
+
+    second_start =
+      send_command(%{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 10})
 
     assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^pomodoro_id}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^first_start}}
+    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^second_start}}
   end
 
   test "command StartPomodoro on two different timers" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroCompleted"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroCompleted"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
-    first_timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartPomodoro", "timer_id" => first_timer_id, "duration" => 10}
+    first_timer_id = Veggy.UUID.new()
 
-    second_timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartPomodoro", "timer_id" => second_timer_id, "duration" => 10}
+    first_command =
+      send_command(%{"command" => "StartPomodoro", "timer_id" => first_timer_id, "duration" => 10})
+
+    second_timer_id = Veggy.UUID.new()
+
+    second_command =
+      send_command(%{
+        "command" => "StartPomodoro",
+        "timer_id" => second_timer_id,
+        "duration" => 10
+      })
 
     assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^first_timer_id}}
     assert_receive {:event, %{"event" => "PomodoroCompleted", "timer_id" => ^first_timer_id}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^first_command}}
+
     assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^second_timer_id}}
     assert_receive {:event, %{"event" => "PomodoroCompleted", "timer_id" => ^second_timer_id}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^second_command}}
   end
 
   test "command SquashPomodoro" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroSquashed"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroSquashed"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
-    timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 100}
-    {:event, %{"pomodoro_id" => pomodoro_id}} = assert_receive {:event, %{"event" => "PomodoroStarted"}}
+    timer_id = Veggy.UUID.new()
+    send_command(%{"command" => "StartPomodoro", "timer_id" => timer_id, "duration" => 300})
 
-    send_command %{"command" => "SquashPomodoro", "timer_id" => timer_id}
+    {:event, %{"pomodoro_id" => pomodoro_id}} =
+      assert_receive {:event, %{"event" => "PomodoroStarted"}}
+
+    squash_pomodoro = send_command(%{"command" => "SquashPomodoro", "timer_id" => timer_id})
+
     assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^pomodoro_id}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^squash_pomodoro}}
   end
 
   test "command SquashPomodoro fails when pomodoro is not ticking" do
-    subscribe_to_event %{"event" => "PomodoroSquashed"}
-    subscribe_to_event %{"event" => "CommandFailed"}
+    subscribe_to_event(%{"event" => "PomodoroSquashed"})
+    subscribe_to_event(%{"event" => "CommandFailed"})
 
-    timer_id = Veggy.UUID.new
-    command_id = send_command %{"command" => "SquashPomodoro", "timer_id" => timer_id}
-    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
+    timer_id = Veggy.UUID.new()
+    command_id = send_command(%{"command" => "SquashPomodoro", "timer_id" => timer_id})
+
     assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
     refute_receive {:event, %{"event" => "PomodoroSquashed"}}
   end
 
   test "command StartSharedPomodoro" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroCompleted"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroCompleted"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
-    driver_timer_id = Veggy.UUID.new
-    navigator_timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartSharedPomodoro",
-                   "timer_id" => driver_timer_id,
-                   "shared_with" => [navigator_timer_id],
-                   "duration" => 100}
+    driver_timer_id = Veggy.UUID.new()
+    navigator_timer_id = Veggy.UUID.new()
+
+    command_id =
+      send_command(%{
+        "command" => "StartSharedPomodoro",
+        "timer_id" => driver_timer_id,
+        "shared_with" => [navigator_timer_id],
+        "duration" => 100
+      })
 
     {:event, %{"pomodoro_id" => driver_pomodoro_id}} =
-      assert_receive {:event, %{"event" => "PomodoroStarted",
-                                "timer_id" => ^driver_timer_id,
-                                "shared_with" => [^navigator_timer_id]}}
+      assert_receive {:event,
+                      %{
+                        "event" => "PomodoroStarted",
+                        "timer_id" => ^driver_timer_id,
+                        "shared_with" => [^navigator_timer_id]
+                      }}
 
     {:event, %{"pomodoro_id" => navigator_pomodoro_id}} =
-      assert_receive {:event, %{"event" => "PomodoroStarted",
-                                "timer_id" => ^navigator_timer_id,
-                                "shared_with" => [^driver_timer_id]}}
+      assert_receive {:event,
+                      %{
+                        "event" => "PomodoroStarted",
+                        "timer_id" => ^navigator_timer_id,
+                        "shared_with" => [^driver_timer_id]
+                      }}
 
-    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^driver_pomodoro_id}}
-    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^navigator_pomodoro_id}}
+    assert_receive {:event,
+                    %{"event" => "PomodoroCompleted", "pomodoro_id" => ^driver_pomodoro_id}}
+
+    assert_receive {:event,
+                    %{"event" => "PomodoroCompleted", "pomodoro_id" => ^navigator_pomodoro_id}}
+
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^command_id}}
   end
 
   test "command StartSharedPomodoro when one is ticking the other must rollback" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroVoided"}
-    subscribe_to_event %{"event" => "PomodoroCompleted"}
-    subscribe_to_event %{"event" => "CommandFailed"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroVoided"})
+    subscribe_to_event(%{"event" => "PomodoroCompleted"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
+    subscribe_to_event(%{"event" => "CommandFailed"})
 
-    driver_timer_id = Veggy.UUID.new
-    navigator_timer_id = Veggy.UUID.new
+    navigator_timer_id = Veggy.UUID.new()
+    driver_timer_id = Veggy.UUID.new()
 
-    send_command %{"command" => "StartPomodoro", "timer_id" => navigator_timer_id, "duration" => 200}
+    start_pomodoro =
+      send_command(%{
+        "command" => "StartPomodoro",
+        "timer_id" => navigator_timer_id,
+        "duration" => 300
+      })
+
     {:event, %{"pomodoro_id" => navigator_pomodoro_id}} =
       assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^navigator_timer_id}}
 
-    command_id = send_command %{"command" => "StartSharedPomodoro",
-                                "timer_id" => driver_timer_id,
-                                "shared_with" => [navigator_timer_id],
-                                "duration" => 100}
-    command_id = Veggy.MongoDB.ObjectId.from_string(command_id)
+    start_shared_pomodoro =
+      send_command(%{
+        "command" => "StartSharedPomodoro",
+        "timer_id" => driver_timer_id,
+        "shared_with" => [navigator_timer_id],
+        "duration" => 100
+      })
 
     assert_receive {:event, %{"event" => "PomodoroStarted", "timer_id" => ^driver_timer_id}}
     assert_receive {:event, %{"event" => "PomodoroVoided", "timer_id" => ^driver_timer_id}}
-    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^command_id}}
+    assert_receive {:event, %{"event" => "CommandFailed", "command_id" => ^start_shared_pomodoro}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^start_pomodoro}}
 
-    assert_receive {:event, %{"event" => "PomodoroCompleted", "pomodoro_id" => ^navigator_pomodoro_id}}
+    assert_receive {:event,
+                    %{"event" => "PomodoroCompleted", "pomodoro_id" => ^navigator_pomodoro_id}}
   end
 
   test "command SquashSharedPomodoro" do
-    subscribe_to_event %{"event" => "PomodoroStarted"}
-    subscribe_to_event %{"event" => "PomodoroSquashed"}
+    subscribe_to_event(%{"event" => "PomodoroStarted"})
+    subscribe_to_event(%{"event" => "PomodoroSquashed"})
+    subscribe_to_event(%{"event" => "CommandSucceeded"})
 
-    driver_timer_id = Veggy.UUID.new
-    navigator_timer_id = Veggy.UUID.new
-    send_command %{"command" => "StartSharedPomodoro",
-                   "timer_id" => driver_timer_id,
-                   "shared_with" => [navigator_timer_id],
-                   "duration" => 100}
+    driver_timer_id = Veggy.UUID.new()
+    navigator_timer_id = Veggy.UUID.new()
+
+    start_pomodoro =
+      send_command(%{
+        "command" => "StartSharedPomodoro",
+        "timer_id" => driver_timer_id,
+        "shared_with" => [navigator_timer_id],
+        "duration" => 300
+      })
 
     {:event, %{"pomodoro_id" => driver_pomodoro_id}} =
-      assert_receive {:event, %{"event" => "PomodoroStarted",
-                                "timer_id" => ^driver_timer_id,
-                                "shared_with" => [^navigator_timer_id]}}
+      assert_receive {:event,
+                      %{
+                        "event" => "PomodoroStarted",
+                        "timer_id" => ^driver_timer_id,
+                        "shared_with" => [^navigator_timer_id]
+                      }}
 
     {:event, %{"pomodoro_id" => navigator_pomodoro_id}} =
-      assert_receive {:event, %{"event" => "PomodoroStarted",
-                                "timer_id" => ^navigator_timer_id,
-                                "shared_with" => [^driver_timer_id]}}
+      assert_receive {:event,
+                      %{
+                        "event" => "PomodoroStarted",
+                        "timer_id" => ^navigator_timer_id,
+                        "shared_with" => [^driver_timer_id]
+                      }}
 
-    send_command %{"command" => "SquashSharedPomodoro", "timer_id" => driver_timer_id}
+    squash_pomodoro =
+      send_command(%{"command" => "SquashSharedPomodoro", "timer_id" => driver_timer_id})
 
-    assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^driver_pomodoro_id}}
-    assert_receive {:event, %{"event" => "PomodoroSquashed", "pomodoro_id" => ^navigator_pomodoro_id}}
+    assert_receive {:event,
+                    %{"event" => "PomodoroSquashed", "pomodoro_id" => ^driver_pomodoro_id}}
+
+    assert_receive {:event,
+                    %{"event" => "PomodoroSquashed", "pomodoro_id" => ^navigator_pomodoro_id}}
+
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^start_pomodoro}}
+    assert_receive {:event, %{"event" => "CommandSucceeded", "command_id" => ^squash_pomodoro}}
   end
 
+  defp subscribe_to_event(event) when is_binary(event),
+    do: subscribe_to_event(%{"event" => event})
 
-
-
-  defp subscribe_to_event(event) when is_binary(event), do: subscribe_to_event(%{"event" => event})
   defp subscribe_to_event(%{"event" => event}) do
-    Veggy.EventStore.subscribe(self(), &match?(%{"event" => ^event}, &1))
+    reference = Veggy.EventStore.subscribe(self(), &match?(%{"event" => ^event}, &1))
+
+    on_exit(fn ->
+      Veggy.EventStore.unsubscribe(reference)
+    end)
   end
 
   defp send_command(command) do
-    conn = conn(:post, "/commands", Poison.encode! command)
-    |> put_req_header("content-type", "application/json")
-    |> Veggy.HTTP.call([])
+    conn =
+      conn(:post, "/commands", Poison.encode!(command))
+      |> put_req_header("content-type", "application/json")
+      |> Veggy.HTTP.call([])
 
     assert conn.status == 201
     assert {"content-type", "application/json"} in conn.resp_headers
 
     command = Poison.decode!(conn.resp_body)
-    expected_location = "#{conn.scheme}://#{conn.host}:#{conn.port}/projections/command-status?command_id=#{command["_id"]}"
+
+    expected_location =
+      "#{conn.scheme}://#{conn.host}:#{conn.port}/projections/command-status?command_id=#{
+        command["_id"]
+      }"
+
     assert {"location", expected_location} in conn.resp_headers
 
-    command["_id"]
+    Veggy.MongoDB.ObjectId.from_string(command["_id"])
   end
 end
